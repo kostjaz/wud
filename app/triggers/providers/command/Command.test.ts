@@ -80,7 +80,7 @@ test('should handle command execution error', async () => {
     const logSpy = jest.spyOn(cmd.log, 'warn');
 
     const container = { name: 'test' };
-    await cmd.trigger(container);
+    await expect(cmd.trigger(container)).rejects.toThrow();
 
     expect(logSpy).toHaveBeenCalledWith(
         expect.stringContaining('execution error'),

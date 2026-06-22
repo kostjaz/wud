@@ -77,6 +77,7 @@ class Command extends Trigger {
             this.log.warn(
                 `Command ${this.configuration.cmd} \nexecution error (${err.message})`,
             );
+            throw err;
         }
     }
 }

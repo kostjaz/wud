@@ -700,6 +700,38 @@ describe('Docker Watcher', () => {
             expect(container.image.digest.value).toBe('sha256:legacy123');
         });
 
+        test('should fall back to the image id for a v1 manifest without a parent image', async () => {
+            await docker.register('watcher', 'docker', 'test', {});
+            const container = {
+                image: {
+                    id: 'sha256:image123',
+                    registry: { name: 'hub' },
+                    tag: { value: 'latest' },
+                    digest: { watch: true, repo: 'sha256:abc123' },
+                },
+            };
+            const mockRegistry = {
+                getTags: jest.fn().mockResolvedValue(['latest']),
+                getImageManifestDigest: jest.fn().mockResolvedValue({
+                    digest: 'sha256:def456',
+                    created: '2023-01-01',
+                    version: 1,
+                }),
+            };
+            registry.getState.mockReturnValue({
+                registry: { hub: mockRegistry },
+            });
+            const mockLogChild = { error: jest.fn() };
+            mockImage.inspect.mockResolvedValue({
+                Id: 'sha256:image123',
+                Config: { Image: '' },
+            });
+
+            await docker.findNewVersion(container, mockLogChild);
+
+            expect(container.image.digest.value).toBe('sha256:image123');
+        });
+
         test('should handle tag candidates with semver', async () => {
             const container = {
                 includeTags: '^v\\d+',

@@ -16,8 +16,16 @@ WORKDIR /home/node/app
 
 RUN mkdir /store
 
-# Add useful stuff
-RUN apk add --no-cache tzdata openssl curl git jq bash
+# Add useful stuff and the Docker Compose CLI used by the command trigger.
+RUN apk add --no-cache \
+    tzdata \
+    openssl \
+    curl \
+    git \
+    jq \
+    bash \
+    docker-cli \
+    docker-cli-compose
 
 # Dependencies stage (Build)
 FROM base AS build
@@ -37,6 +45,17 @@ RUN npm run build
 # Remove dev dependencies
 RUN npm prune --omit=dev
 
+# UI stage (Build)
+FROM node:24-alpine AS ui-build
+
+WORKDIR /home/node/ui
+
+COPY ui/package* ./
+RUN npm ci --include=dev --no-audit --no-fund --no-update-notifier
+
+COPY ui/ ./
+RUN npm run build
+
 # Release stage
 FROM base AS release
 
@@ -46,6 +65,10 @@ RUN chmod +x /usr/bin/entrypoint.sh
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]
 CMD ["node", "dist/index.js"]
 
+# Default command-trigger helper. It can be overridden with a bind mount.
+COPY wud-compose-update.sh /usr/local/bin/wud-compose-update
+RUN chmod +x /usr/local/bin/wud-compose-update
+
 ## Copy node_modules
 COPY --from=build /home/node/app/node_modules ./node_modules
 
@@ -54,4 +77,4 @@ COPY --from=build /home/node/app/dist ./dist
 COPY --from=build /home/node/app/package.json ./package.json
 
 # Copy ui
-COPY ui/dist/ ./ui
+COPY --from=ui-build /home/node/ui/dist ./ui
