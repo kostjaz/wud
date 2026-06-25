@@ -54,6 +54,81 @@ if [[ -n "${WUD_COMPOSE_PROJECT_DIRECTORY:-}" ]]; then
     compose_command+=(--project-directory "${WUD_COMPOSE_PROJECT_DIRECTORY}")
 fi
 
+normalize_bool() {
+    case "${1,,}" in
+        1|true|yes|y|on)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+collect_service_image_ids() {
+    local service container_id image_id
+
+    for service in "${services[@]}"; do
+        while IFS= read -r container_id; do
+            [[ -n "${container_id}" ]] || continue
+
+            image_id="$(docker inspect --format '{{.Image}}' "${container_id}" 2>/dev/null || true)"
+            [[ -n "${image_id}" ]] || continue
+            printf '%s\n' "${image_id}"
+        done < <("${compose_command[@]}" ps -q "${service}" 2>/dev/null || true)
+    done | sort -u
+}
+
+image_id_in_list() {
+    local needle="$1"
+    local image_id
+    shift
+
+    for image_id in "$@"; do
+        [[ "${image_id}" != "${needle}" ]] || return 0
+    done
+
+    return 1
+}
+
+image_is_used_by_container() {
+    local image_id="$1"
+
+    [[ -n "$(docker ps --all --quiet --filter "ancestor=${image_id}" 2>/dev/null)" ]]
+}
+
+prune_old_service_images() {
+    local image_id
+    local -a previous_image_ids=("$@")
+    local -a current_image_ids=()
+
+    if (( ${#previous_image_ids[@]} == 0 )); then
+        echo "No previous service images found to prune"
+        return 0
+    fi
+
+    mapfile -t current_image_ids < <(collect_service_image_ids)
+
+    for image_id in "${previous_image_ids[@]}"; do
+        if image_id_in_list "${image_id}" "${current_image_ids[@]}"; then
+            echo "Keeping image still used by updated services: ${image_id}"
+            continue
+        fi
+
+        if image_is_used_by_container "${image_id}"; then
+            echo "Keeping image still used by another container: ${image_id}"
+            continue
+        fi
+
+        echo "Removing old service image: ${image_id}"
+        if ! docker image rm "${image_id}"; then
+            echo "Failed to remove old service image: ${image_id}" >&2
+        fi
+    done
+}
+
+mapfile -t previous_image_ids < <(collect_service_image_ids)
+
 printf 'Updating Compose services:'
 printf ' %q' "${services[@]}"
 printf '\n'
@@ -63,3 +138,9 @@ printf '\n'
     --pull always \
     --no-deps \
     "${services[@]}"
+
+if normalize_bool "${WUD_COMPOSE_PRUNE_OLD_IMAGES:-true}"; then
+    prune_old_service_images "${previous_image_ids[@]}"
+else
+    echo "Old service image pruning is disabled"
+fi
