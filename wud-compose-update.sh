@@ -65,6 +65,45 @@ normalize_bool() {
     esac
 }
 
+registry_login_server() {
+    local registry_url="$1"
+
+    registry_url="${registry_url#http://}"
+    registry_url="${registry_url#https://}"
+    printf '%s\n' "${registry_url%%/*}"
+}
+
+configure_docker_registry_auth() {
+    local docker_config registry_server
+
+    if ! normalize_bool "${WUD_COMPOSE_DOCKER_LOGIN:-true}"; then
+        echo "Docker registry login is disabled"
+        return 0
+    fi
+
+    if [[ -z "${WUD_REGISTRY_CUSTOM_YANDEX_URL:-}" ||
+        -z "${WUD_REGISTRY_CUSTOM_YANDEX_LOGIN:-}" ||
+        -z "${WUD_REGISTRY_CUSTOM_YANDEX_PASSWORD:-}" ]]; then
+        echo "Docker registry login skipped: WUD_REGISTRY_CUSTOM_YANDEX_URL, LOGIN or PASSWORD is not set"
+        return 0
+    fi
+
+    docker_config="${WUD_COMPOSE_DOCKER_CONFIG:-${DOCKER_CONFIG:-/tmp/wud-docker-config}}"
+    if [[ "${docker_config}" == "/" ]]; then
+        docker_config="/tmp/wud-docker-config"
+    fi
+
+    export DOCKER_CONFIG="${docker_config}"
+    mkdir -p "${DOCKER_CONFIG}"
+
+    registry_server="$(registry_login_server "${WUD_REGISTRY_CUSTOM_YANDEX_URL}")"
+    echo "Logging in to Docker registry: ${registry_server}"
+    printf '%s' "${WUD_REGISTRY_CUSTOM_YANDEX_PASSWORD}" \
+        | docker login "${registry_server}" \
+            --username "${WUD_REGISTRY_CUSTOM_YANDEX_LOGIN}" \
+            --password-stdin
+}
+
 collect_service_image_ids() {
     local service container_id image_id
 
@@ -126,6 +165,8 @@ prune_old_service_images() {
         fi
     done
 }
+
+configure_docker_registry_auth
 
 mapfile -t previous_image_ids < <(collect_service_image_ids)
 
