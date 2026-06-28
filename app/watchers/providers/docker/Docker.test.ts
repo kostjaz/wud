@@ -971,6 +971,62 @@ describe('Docker Watcher', () => {
             expect(result).toBeUndefined();
         });
 
+        test('should fall back to container config image when repo tags are gone', async () => {
+            await docker.register('watcher', 'docker', 'test', {});
+            const mockLog = { warn: jest.fn() };
+            docker.log = mockLog;
+            const container = {
+                Id: '123',
+                Image: 'sha256:abcdef123456',
+                Config: {
+                    Image: 'registry.yandexcloud.net/project/webapi:latest',
+                },
+                Names: ['/test'],
+                State: 'running',
+                Labels: {},
+            };
+            const imageDetails = {
+                RepoTags: [],
+                RepoDigests: [
+                    'registry.yandexcloud.net/project/webapi@sha256:abc123',
+                ],
+                Architecture: 'amd64',
+                Os: 'linux',
+                Created: '2023-01-01',
+                Id: 'sha256:abcdef123456',
+            };
+            mockImage.inspect.mockResolvedValue(imageDetails);
+            mockParse.mockReturnValueOnce({
+                domain: 'registry.yandexcloud.net',
+                path: 'project/webapi',
+                tag: 'latest',
+            });
+
+            const mockRegistry = {
+                normalizeImage: jest.fn((img) => img),
+                getId: () => 'yandex',
+                match: () => true,
+            };
+            registry.getState.mockReturnValue({
+                registry: { yandex: mockRegistry },
+            });
+
+            const containerModule = await import('../../../model/container');
+            const validateContainer = containerModule.validate;
+            // @ts-ignore
+            validateContainer.mockImplementation((c) => c);
+
+            const result = await docker.addImageDetailsToContainer(container);
+
+            expect(mockParse).toHaveBeenCalledWith(
+                'registry.yandexcloud.net/project/webapi:latest',
+            );
+            expect(mockLog.warn).not.toHaveBeenCalledWith(
+                expect.stringContaining('Cannot get a reliable tag'),
+            );
+            expect(result.image.name).toBe('project/webapi');
+        });
+
         test('should warn for non-semver without digest watching', async () => {
             await docker.register('watcher', 'docker', 'test', {});
             const mockLog = { warn: jest.fn() };

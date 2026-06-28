@@ -287,6 +287,20 @@ function getRepoDigest(containerImage: any) {
     return digestSplit[1];
 }
 
+function getContainerImageNameFallback(container: any) {
+    const imageName =
+        container?.Config?.Image ||
+        container?.ImageName ||
+        container?.ImageRef ||
+        '';
+
+    if (!imageName || imageName.includes('sha256:')) {
+        return undefined;
+    }
+
+    return imageName;
+}
+
 /**
  * Return true if container must be watched.
  * @param wudWatchLabelValue the value of the wud.watch label
@@ -880,14 +894,20 @@ class Docker extends Watcher {
         let imageNameToParse = container.Image;
         if (imageNameToParse.includes('sha256:')) {
             if (!image.RepoTags || image.RepoTags.length === 0) {
-                this.ensureLogger();
-                this.log.warn(
-                    `Cannot get a reliable tag for this image [${imageNameToParse}]`,
-                );
-                return Promise.resolve();
+                const fallbackImageName =
+                    getContainerImageNameFallback(container);
+                if (!fallbackImageName) {
+                    this.ensureLogger();
+                    this.log.warn(
+                        `Cannot get a reliable tag for this image [${imageNameToParse}]`,
+                    );
+                    return Promise.resolve();
+                }
+                imageNameToParse = fallbackImageName;
+            } else {
+                // Get the first repo tag (better than nothing ;)
+                [imageNameToParse] = image.RepoTags;
             }
-            // Get the first repo tag (better than nothing ;)
-            [imageNameToParse] = image.RepoTags;
         }
         let parsedImage = parse(imageNameToParse);
         const tagName =
