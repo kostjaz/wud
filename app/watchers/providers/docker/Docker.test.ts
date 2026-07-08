@@ -1027,6 +1027,65 @@ describe('Docker Watcher', () => {
             expect(result.image.name).toBe('project/webapi');
         });
 
+        test('should inspect container for image name when listed image is a short id', async () => {
+            await docker.register('watcher', 'docker', 'test', {});
+            const mockLog = { warn: jest.fn() };
+            docker.log = mockLog;
+            const container = {
+                Id: '123',
+                Image: '702c572e1943',
+                Names: ['/s2snext-task-loader-1'],
+                State: 'running',
+                Labels: {},
+            };
+            const imageDetails = {
+                RepoTags: [],
+                RepoDigests: [
+                    'registry.yandexcloud.net/project/task-loader@sha256:abc123',
+                ],
+                Architecture: 'amd64',
+                Os: 'linux',
+                Created: '2023-01-01',
+                Id: 'sha256:702c572e1943',
+            };
+            mockImage.inspect.mockResolvedValue(imageDetails);
+            mockContainer.inspect.mockResolvedValue({
+                Config: {
+                    Image: 'registry.yandexcloud.net/project/task-loader:latest',
+                },
+            });
+            mockParse.mockReturnValueOnce({
+                domain: 'registry.yandexcloud.net',
+                path: 'project/task-loader',
+                tag: 'latest',
+            });
+
+            const mockRegistry = {
+                normalizeImage: jest.fn((img) => img),
+                getId: () => 'yandex',
+                match: () => true,
+            };
+            registry.getState.mockReturnValue({
+                registry: { yandex: mockRegistry },
+            });
+
+            const containerModule = await import('../../../model/container');
+            const validateContainer = containerModule.validate;
+            // @ts-ignore
+            validateContainer.mockImplementation((c) => c);
+
+            const result = await docker.addImageDetailsToContainer(container);
+
+            expect(mockDockerApi.getContainer).toHaveBeenCalledWith('123');
+            expect(mockParse).toHaveBeenCalledWith(
+                'registry.yandexcloud.net/project/task-loader:latest',
+            );
+            expect(result.image.name).toBe('project/task-loader');
+            expect(mockLog.warn).not.toHaveBeenCalledWith(
+                expect.stringContaining('Cannot get a reliable tag'),
+            );
+        });
+
         test('should warn for non-semver without digest watching', async () => {
             await docker.register('watcher', 'docker', 'test', {});
             const mockLog = { warn: jest.fn() };

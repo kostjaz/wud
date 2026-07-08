@@ -287,18 +287,40 @@ function getRepoDigest(containerImage: any) {
     return digestSplit[1];
 }
 
-function getContainerImageNameFallback(container: any) {
+function isImageIdReference(imageName: string) {
+    return (
+        imageName.includes('sha256:') ||
+        /^[a-f0-9]{12,64}$/i.test(imageName)
+    );
+}
+
+async function getContainerImageNameFallback(
+    dockerApi: Dockerode,
+    container: any,
+) {
     const imageName =
         container?.Config?.Image ||
         container?.ImageName ||
         container?.ImageRef ||
         '';
 
-    if (!imageName || imageName.includes('sha256:')) {
+    if (imageName && !isImageIdReference(imageName)) {
+        return imageName;
+    }
+
+    try {
+        const inspectedContainer = await dockerApi
+            .getContainer(container.Id)
+            .inspect();
+        const inspectedImageName = inspectedContainer?.Config?.Image || '';
+        if (inspectedImageName && !isImageIdReference(inspectedImageName)) {
+            return inspectedImageName;
+        }
+    } catch (e) {
         return undefined;
     }
 
-    return imageName;
+    return undefined;
 }
 
 /**
@@ -892,10 +914,12 @@ class Docker extends Watcher {
 
         // Parse image to get registry, organization...
         let imageNameToParse = container.Image;
-        if (imageNameToParse.includes('sha256:')) {
+        if (isImageIdReference(imageNameToParse)) {
             if (!image.RepoTags || image.RepoTags.length === 0) {
-                const fallbackImageName =
-                    getContainerImageNameFallback(container);
+                const fallbackImageName = await getContainerImageNameFallback(
+                    this.dockerApi,
+                    container,
+                );
                 if (!fallbackImageName) {
                     this.ensureLogger();
                     this.log.warn(
