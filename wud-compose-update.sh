@@ -4,11 +4,21 @@ set -Eeuo pipefail
 lock_file="${WUD_COMPOSE_LOCK_FILE:-/tmp/wud-compose-update.lock}"
 lock_timeout="${WUD_COMPOSE_LOCK_TIMEOUT:-1800}"
 
-exec 9>"${lock_file}"
-if ! flock -w "${lock_timeout}" 9; then
-    echo "Another Compose update is still running; timed out waiting for lock: ${lock_file}" >&2
-    exit 75
+if ! command -v flock >/dev/null 2>&1; then
+    echo "flock is required but was not found" >&2
+    exit 1
 fi
+
+exec 9>"${lock_file}"
+lock_deadline=$((SECONDS + lock_timeout))
+while ! flock -n 9; do
+    if (( SECONDS >= lock_deadline )); then
+        echo "Another Compose update is still running; timed out waiting for lock: ${lock_file}" >&2
+        exit 75
+    fi
+
+    sleep 1
+done
 
 echo "Acquired Compose update lock: ${lock_file}"
 
