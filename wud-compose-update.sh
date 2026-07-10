@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+lock_file="${WUD_COMPOSE_LOCK_FILE:-/tmp/wud-compose-update.lock}"
+lock_timeout="${WUD_COMPOSE_LOCK_TIMEOUT:-1800}"
+
+exec 9>"${lock_file}"
+if ! flock -w "${lock_timeout}" 9; then
+    echo "Another Compose update is still running; timed out waiting for lock: ${lock_file}" >&2
+    exit 75
+fi
+
+echo "Acquired Compose update lock: ${lock_file}"
+
 if [[ -z "${containers_json:-}" ]]; then
     echo "containers_json is required; configure the command trigger in batch mode" >&2
     exit 1
