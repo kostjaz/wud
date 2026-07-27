@@ -669,6 +669,47 @@ describe('Docker Watcher', () => {
             expect(result.created).toBe('2023-01-01');
         });
 
+        test('should treat missing local repo digest as stale when watching v2 manifest', async () => {
+            const container = {
+                image: {
+                    id: 'image123',
+                    registry: { name: 'hub' },
+                    tag: { value: 'latest' },
+                    digest: { watch: true, repo: 'sha256:oldindex' },
+                },
+            };
+            const notFoundError: any = new Error(
+                'Request failed with status code 404',
+            );
+            notFoundError.response = { status: 404 };
+            const mockRegistry = {
+                getTags: jest.fn().mockResolvedValue(['latest']),
+                getImageManifestDigest: jest
+                    .fn()
+                    .mockResolvedValueOnce({
+                        digest: 'sha256:newmanifest',
+                        created: '2023-01-01',
+                        version: 2,
+                    })
+                    .mockRejectedValueOnce(notFoundError),
+            };
+            registry.getState.mockReturnValue({
+                registry: { hub: mockRegistry },
+            });
+            const mockLogChild = { error: jest.fn(), warn: jest.fn() };
+
+            const result = await docker.findNewVersion(container, mockLogChild);
+
+            expect(mockRegistry.getImageManifestDigest).toHaveBeenCalledTimes(
+                2,
+            );
+            expect(result.digest).toBe('sha256:newmanifest');
+            expect(container.image.digest.value).toBe('sha256:oldindex');
+            expect(mockLogChild.warn).toHaveBeenCalledWith(
+                'Local repo digest sha256:oldindex is no longer available in registry; treating it as stale',
+            );
+        });
+
         test('should handle digest watching with v1 manifest', async () => {
             await docker.register('watcher', 'docker', 'test', {});
             const container = {

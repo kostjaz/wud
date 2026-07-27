@@ -840,12 +840,24 @@ class Docker extends Watcher {
                 if (remoteDigest.version === 2) {
                     // Regular v2 manifest => Get manifest digest
 
-                    const digestV2 =
-                        await registryProvider.getImageManifestDigest(
-                            imageToGetDigestFrom,
-                            container.image.digest.repo,
+                    try {
+                        const digestV2 =
+                            await registryProvider.getImageManifestDigest(
+                                imageToGetDigestFrom,
+                                container.image.digest.repo,
+                            );
+                        container.image.digest.value = digestV2.digest;
+                    } catch (e: any) {
+                        if (e.response?.status !== 404) {
+                            throw e;
+                        }
+
+                        logContainer.warn(
+                            `Local repo digest ${container.image.digest.repo} is no longer available in registry; treating it as stale`,
                         );
-                    container.image.digest.value = digestV2.digest;
+                        container.image.digest.value =
+                            container.image.digest.repo;
+                    }
                 } else {
                     // Legacy v1 image => take Image digest as reference for comparison
                     const image = await this.dockerApi
