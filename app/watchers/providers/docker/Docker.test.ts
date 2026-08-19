@@ -206,21 +206,19 @@ describe('Docker Watcher', () => {
             expect(mockDebounce).toHaveBeenCalled();
         });
 
-        test('should not setup events when disabled', async () => {
-            await docker.register('watcher', 'docker', 'test', {
-                watchevents: false,
-            });
+        test('should not setup events by default', async () => {
+            await docker.register('watcher', 'docker', 'test', {});
             docker.init();
             expect(mockDebounce).not.toHaveBeenCalled();
         });
 
-        test('should set watchatstart based on store state', async () => {
+        test('should respect explicit watchatstart', async () => {
             storeContainer.getContainers.mockReturnValue([{ id: 'existing' }]);
             await docker.register('watcher', 'docker', 'test', {
                 watchatstart: true,
             });
             docker.init();
-            expect(docker.configuration.watchatstart).toBe(false);
+            expect(docker.configuration.watchatstart).toBe(true);
         });
     });
 

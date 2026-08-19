@@ -424,8 +424,8 @@ class Docker extends Watcher {
             watchbydefault: this.joi.boolean().default(true),
             watchall: this.joi.boolean().default(false),
             watchdigest: this.joi.any(),
-            watchevents: this.joi.boolean().default(true),
-            watchatstart: this.joi.boolean().default(true),
+            watchevents: this.joi.boolean().default(false),
+            watchatstart: this.joi.boolean().default(false),
         });
     }
 
@@ -446,10 +446,6 @@ class Docker extends Watcher {
             () => this.watchFromCron(),
             { maxRandomDelay: this.configuration.jitter },
         );
-
-        // Force watchatstart value based on the state store (empty or not)
-        this.configuration.watchatstart =
-            storeContainer.getContainers().length === 0;
 
         // watch at startup if enabled (after all components have been registered)
         if (this.configuration.watchatstart) {
